@@ -1,0 +1,31 @@
+{
+  "_comment": "Planfix custom field IDs for company (contractor) data from Megaplan payer. Set null to append value to description instead.",
+  "company": {
+    "inn":                  { "planfix_field_id": null, "label": "ИНН" },
+    "kpp":                  { "planfix_field_id": null, "label": "КПП" },
+    "ogrn":                 { "planfix_field_id": null, "label": "ОГРН" },
+    "okpo":                 { "planfix_field_id": null, "label": "ОКПО" },
+    "okved":                { "planfix_field_id": null, "label": "ОКВЭД" },
+    "legal_address":        { "planfix_field_id": null, "label": "Юр. адрес" },
+    "actual_address":       { "planfix_field_id": null, "label": "Факт. адрес" },
+    "bank_name":            { "planfix_field_id": null, "label": "Банк" },
+    "bic":                  { "planfix_field_id": null, "label": "БИК" },
+    "current_account":      { "planfix_field_id": null, "label": "Р/с" },
+    "correspondent_account":{ "planfix_field_id": null, "label": "К/с" },
+    "director_name":        { "planfix_field_id": null, "label": "Директор" },
+    "director_post":        { "planfix_field_id": null, "label": "Должность директора" },
+    "megaplan_id":          { "planfix_field_id": null, "label": "Megaplan ID" },
+    "megaplan_type":        { "planfix_field_id": null, "label": "Тип контрагента" },
+    "megaplan_category":    { "planfix_field_id": null, "label": "Категория (Megaplan)" }
+  },
+  "contact": {
+    "megaplan_id":          { "planfix_field_id": null, "label": "Megaplan ID" }
+  },
+  "phone_type_map": {
+    "Мобильный":  1,
+    "Сотовый":    1,
+    "Рабочий":    2,
+    "Домашний":   3,
+    "default":    4
+  }
+}
