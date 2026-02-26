@@ -1,0 +1,46 @@
+{
+  "_comment": "Planfix field IDs for template 'Рабочая задача' (id=7824). Generic work task — 1 custom field only.",
+  "template_id": 7824,
+  "template_name": "Рабочая задача",
+  "_notes": {
+    "no_financial_fields": true,
+    "no_migration_ids": true,
+    "no_assignees": true,
+    "no_auditors": true
+  },
+  "_data_quality_issues": [
+    { "field_id": 120557, "issue": "'Команда Харитоновой' и 'Команда Лихтман' — одинаковый цвет фона #008377" }
+  ],
+
+  "fields": {
+    "team": {
+      "id": 120557,
+      "name": "⭐ Команда",
+      "type": 8,
+      "_shared_field": true,
+      "_note": "Общее поле — встречается в других шаблонах с тем же id",
+      "values_with_colors": {
+        "Команда Алины Морозовой":          { "color": "#FFFFFF", "background": "#C3134F" },
+        "Команда Евгении Мамичевой":        { "color": "#FFFFFF", "background": "#B866C6" },
+        "Команда Нелли Саровой":            { "color": "#FFFFFF", "background": "#626315" },
+        "Команда Зинченко":                 { "color": "#FFFFFF", "background": "#02C6DC" },
+        "Команда Харитоновой":              { "color": "#FFFFFF", "background": "#008377" },
+        "Саша Лихтман":                     { "color": "#FFFFFF", "background": "#2979FF" },
+        "Гайнель-Хаят Шакирова":            { "color": "#FFFFFF", "background": "#0D47A1" },
+        "Зарнигор Усманова":                { "color": "#FFFFFF", "background": "#052F6F" },
+        "Настя Коханюк":                    { "color": "#FFFFFF", "background": "#FFAC92" },
+        "Даша Головина":                    { "color": "#FFFFFF", "background": "#EF77BF" },
+        "Жанна Скрипаль":                   { "color": "#FFFFFF", "background": "#4A148C" },
+        "Асемгуль Сыздыкова":               { "color": "#698606", "background": "#D2FF7A" },
+        "АХО ITCOMMS":                      { "color": "#FFFFFF", "background": "#A1D209" },
+        "Команда Коханюк":                  { "color": "#FFFFFF", "background": "#5CC65F" },
+        "Команда Бариновой":                { "color": "#FFFFFF", "background": "#00D06B" },
+        "Команда Лихтман":                  { "color": "#FFFFFF", "background": "#008377" },
+        "Команда Нахапетова":               { "color": "#7C6C16", "background": "#FFE560" },
+        "Команда Метавселенных":            { "color": "#FFFFFF", "background": "#E9B800" },
+        "Команда Морозовой Дана Хиссимова": { "color": "#FFFFFF", "background": "#FF9400" },
+        "Ташмагамбетова Алина":             { "color": "#FFFFFF", "background": "#F4511E" }
+      }
+    }
+  }
+}
