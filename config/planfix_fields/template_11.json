@@ -1,0 +1,88 @@
+{
+  "_comment": "Planfix field IDs for template 'Текущие клиенты' (id=11). Used by migration code.",
+  "template_id": 11,
+  "template_name": "Текущие клиенты",
+
+  "megaplan_migration": {
+    "deal_id":          { "id": 132121, "name": "ID сделки",           "type": 0 },
+    "contractor_id":    { "id": 130207, "name": "ID контрагента",      "type": 0 },
+    "invoice_id":       { "id": 130209, "name": "ID счета",            "type": 0 },
+    "related_deals":    { "id": 130211, "name": "ID связанных сделок", "type": 0 },
+    "payer_id":         { "id": 130213, "name": "ID плательщика",      "type": 0 },
+    "created_at_mp":    { "id": 133603, "name": "Дата создания в МП",  "type": 5 },
+    "manager_mp":       { "id": 132115, "name": "Менеджер мп",         "type": 0 },
+    "status_mp":        { "id": 132117, "name": "Статус мп",           "type": 0 },
+    "payment_type_mp":  { "id": 132119, "name": "Оплата тип мп",       "type": 0 },
+    "table_id":         { "id": 132137, "name": "ID таблицы",          "type": 0 },
+    "folder_id":        { "id": 132139, "name": "ID folder",           "type": 0 },
+    "brief_id":         { "id": 132141, "name": "ID бриф",             "type": 0 },
+    "estimate_id":      { "id": 132143, "name": "ID сметы",            "type": 0 }
+  },
+
+  "required": {
+    "team":             { "id": 120557, "name": "⭐ Команда",          "type": 8,  "view": "buttons",
+                          "values": ["Команда Алины Морозовой","Команда Евгении Мамичевой","Команда Нелли Саровой","Команда Зинченко","Команда Харитоновой","Саша Лихтман","Гайнель-Хаят Шакирова","Зарнигор Усманова","Настя Коханюк","Даша Головина","Жанна Скрипаль","Асемгуль Сыздыкова","АХО ITCOMMS","Команда Коханюк","Команда Бариновой","Команда Лихтман","Команда Нахапетова","Команда Метавселенных","Команда Морозовой Дана Хиссимова","Ташмагамбетова Алина"] },
+    "deal_type":        { "id": 120569, "name": "⭐ Вид сделки",       "type": 8,
+                          "values": ["Ритейнер","Спецпроект","Транзит"] },
+    "deal_period":      { "id": 124665, "name": "⭐ Период сделки",    "type": 8,  "values_pattern": "кварталы и месяцы 2020-2026" },
+    "client_report":    { "id": 120587, "name": "⭐ Отчет клиенту",    "type": 0 }
+  },
+
+  "project": {
+    "brand":            { "id": 120565, "name": "Бренд",               "type": 8,  "values_count": 170 },
+    "disk_link":        { "id": 120545, "name": "Ссылка на диск",      "type": 0 },
+    "start_date":       { "id": 120547, "name": "Начало проекта",      "type": 3 },
+    "end_date":         { "id": 120549, "name": "Ожидаемый конец проекта", "type": 3 },
+    "invoice_number":   { "id": 120555, "name": "Номер инвойса",       "type": 0 },
+    "creative_report":  { "id": 120607, "name": "Творческий отчет",    "type": 0 },
+    "auto":             { "id": 132389, "name": "Авто",                "type": 7 }
+  },
+
+  "documents": {
+    "brief_file":       { "id": 120571, "name": "Бриф",                        "type": 21 },
+    "kp":               { "id": 120573, "name": "КП",                          "type": 0  },
+    "estimate":         { "id": 120575, "name": "Смета",                       "type": 0  },
+    "contract":         { "id": 120577, "name": "Договор (утвержденный)",      "type": 21 },
+    "contract_scan":    { "id": 120579, "name": "Скан договора",               "type": 21 },
+    "appendix_scan":    { "id": 120581, "name": "Скан Приложения (или ДС)",    "type": 21 },
+    "act":              { "id": 120585, "name": "Акт выполненных работ",       "type": 21 },
+    "has_contract_scan":{ "id": 120599, "name": "Скан договора есть?",         "type": 7  },
+    "has_appendix_scan":{ "id": 120601, "name": "Скан Приложения есть?",       "type": 7  },
+    "has_act_scan":     { "id": 120603, "name": "Скан акта есть?",             "type": 7  },
+    "fin_report_done":  { "id": 120605, "name": "Фин.отчет сдан",             "type": 7  }
+  },
+
+  "finance_manual": {
+    "currency":         { "id": 132123, "name": "Валюта сделки",               "type": 20, "values": ["USD","RUB","KZT","UZS","AZN","KGS","EUR"] },
+    "last_payment":     { "id": 120597, "name": "Сумма последней оплаты",      "type": 1  },
+    "exchange_rate":    { "id": 120745, "name": "Курс последней транзакции",   "type": 1  },
+    "planned_profit":   { "id": 120551, "name": "Плановая прибыль",            "type": 1  },
+    "planned_expenses": { "id": 120553, "name": "Плановые затраты",            "type": 1  },
+    "final_cost":       { "id": 120741, "name": "Финальная стоимость",         "type": 1  },
+    "ad_fee":           { "id": 120739, "name": "Рекламный сбор",              "type": 1  }
+  },
+
+  "finance_aggregated": {
+    "expenses_usd_cash":    { "id": 140723, "name": "Сумма расходов в дол. (конф)",       "type": 26 },
+    "expenses_usd_bank":    { "id": 140725, "name": "Сумма расходов в дол. (безн)",       "type": 26 },
+    "revenue_usd":          { "id": 140729, "name": "Фактическая выручка в дол.",         "type": 26 },
+    "revenue_orig":         { "id": 140731, "name": "Фактическая выручка в исх.вал.",     "type": 26 },
+    "tax_orig":             { "id": 140735, "name": "Налог на выручку в исх. вал.",       "type": 26 },
+    "tax_usd":              { "id": 140737, "name": "Налог на выручку в дол.",            "type": 26 },
+    "expenses_orig_cash":   { "id": 140739, "name": "Сумма расходов в исх. вал. (конф)", "type": 26 },
+    "expenses_orig_bank":   { "id": 140741, "name": "Сумма расходов в исх. вал. (безн)", "type": 26 }
+  },
+
+  "finance_formulas": {
+    "final_cost_orig":  { "id": 140743, "name": "Финальная стоимость в исх. вал.", "type": 24,
+                          "formula": "expenses_orig_cash + expenses_orig_bank" },
+    "final_cost_usd":   { "id": 120945, "name": "Финальная стоимость в $$",       "type": 24,
+                          "formula": "expenses_usd_cash + expenses_usd_bank" },
+    "profit":           { "id": 120905, "name": "Фактическая прибыль",             "type": 24,
+                          "formula": "revenue - tax - final_cost - ad_fee" },
+    "tax_usd_calc":     { "id": 120941, "name": "Налог на выручку в $$",           "type": 24,
+                          "formula": "tax / exchange_rate" },
+    "profit_usd":       { "id": 120951, "name": "Фактическая прибыль в $$",        "type": 24,
+                          "formula": "profit / exchange_rate" }
+  }
+}

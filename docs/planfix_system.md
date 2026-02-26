@@ -53,7 +53,7 @@
 - К ней прикрепляется **Invoice** (доходы)
 - Через сущность **Проекты** связана с **Рабочими задачами**
 
-**Кастомные поля:** уточнить (GET /task/11)
+**Кастомные поля:** см. [`docs/templates/11_tekushchie_klienty.md`](templates/11_tekushchie_klienty.md) | JSON-конфиг: `config/planfix_fields/template_11.json`
 
 ---
 
