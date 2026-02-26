@@ -9,6 +9,7 @@ data/*
 # Logs
 logs/*
 !logs/.gitkeep
+*.log
 
 # Python
 __pycache__/
