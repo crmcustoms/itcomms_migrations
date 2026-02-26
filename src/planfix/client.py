@@ -122,6 +122,36 @@ class PlanfixClient:
         )
 
     # ------------------------------------------------------------------
+    # Tasks
+
+    def list_tasks(
+        self,
+        *,
+        template_id: int,
+        offset: int = 0,
+        page_size: int = 100,
+        fields: str = "id,name,customFieldData",
+    ) -> dict:
+        """POST /task/list — paginated list of tasks filtered by template."""
+        body = {
+            "offset": offset,
+            "pageSize": page_size,
+            "fields": fields,
+            "filters": [
+                {
+                    "type": 4008,         # filter by template
+                    "operator": "equal",
+                    "value": template_id,
+                }
+            ],
+        }
+        return self._request("POST", "/task/list", json=body)
+
+    def update_task(self, task_id: int, data: dict) -> dict:
+        """POST /task/{id} — update task fields."""
+        return self._request("POST", f"/task/{task_id}", json=data)
+
+    # ------------------------------------------------------------------
     # Health check
 
     def ping(self) -> bool:
