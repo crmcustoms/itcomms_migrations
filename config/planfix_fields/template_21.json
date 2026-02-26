@@ -1,0 +1,55 @@
+{
+  "_comment": "Planfix field IDs for template 'Invoice' (id=21). Used by migration code.",
+  "template_id": 21,
+  "template_name": "Invoice",
+
+  "megaplan_migration": {
+    "deal_id":        { "id": 132121, "name": "ID сделки", "type": 0 }
+  },
+
+  "required": {
+    "invoice_date":   { "id": 128169, "name": "Invoice Date",  "type": 3, "auto_current_date": true },
+    "currency":       { "id": 133125, "name": "Валюта",        "type": 9, "directory_id": 18085 },
+    "our_entity":     { "id": 135995, "name": "Наше Юр. лицо","type": 9, "directory_id": 17501 }
+  },
+
+  "invoice_meta": {
+    "invoice_number": { "id": 128167, "name": "Invoice Number",       "type": 0  },
+    "payment_due":    { "id": 128177, "name": "Payment due",          "type": 3  },
+    "payment_date":   { "id": 128157, "name": "Invoice Payment Date", "type": 3  },
+    "billing_contact":{ "id": 128179, "name": "Billing Contact",      "type": 10 },
+    "notes":          { "id": 128171, "name": "Notes / Payment terms", "type": 2 },
+    "documents":      { "id": 128165, "name": "Documents",            "type": 21 },
+    "status":         { "id": 128151, "name": "Invoice Status",       "type": 8,
+                        "values": ["Draft","Sent / Open","Paid","Overdue","Void","Closed"] }
+  },
+
+  "finance_manual": {
+    "payment_amount": { "id": 128161, "name": "Payment Amount",        "type": 1 },
+    "payment_usd":    { "id": 140727, "name": "Сумма оплаты в дол.",   "type": 1 },
+    "exchange_rate":  { "id": 138907, "name": "Курс на момент оплаты", "type": 1 },
+    "discount_dir":   { "id": 128173, "name": "Discount",              "type": 9, "directory_id": 17499,
+                        "_note": "% скидки из справочника" }
+  },
+
+  "finance_aggregated": {
+    "subtotal":       { "id": 128155, "name": "SUBTOTAL", "type": 23,
+                        "_note": "Агрегат из data-tag строк Item/Service.Amount" },
+    "tax":            { "id": 128159, "name": "TAX",      "type": 23,
+                        "_note": "Агрегат из data-tag строк TAX" }
+  },
+
+  "finance_formulas": {
+    "discount_amount":{ "id": 128175, "name": "Discount Amount", "type": 24,
+                        "formula": "{{Task.SUBTOTAL}}*{{Task.Discount}}/100" },
+    "invoice_total":  { "id": 128163, "name": "INVOICE TOTAL",   "type": 24,
+                        "formula": "{{Task.SUBTOTAL}}-{{Task.Discount Amount}}" },
+    "tax_usd":        { "id": 140733, "name": "TAX $",           "type": 24,
+                        "formula": "{{Задача.TAX}}/{{Задача.Курс на момент оплаты}}" }
+  },
+
+  "shared_from_template_11": {
+    "team":           { "id": 120557, "name": "⭐ Команда", "type": 8,
+                        "_ref": "config/planfix_fields/template_11.json#required.team" }
+  }
+}

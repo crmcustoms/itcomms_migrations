@@ -98,6 +98,8 @@
 | `Data tag.TAX.Tax Type.Tax Name` | Тип налога            |
 | `Data tag.TAX.TAX`               | Сумма налога          |
 
+**Кастомные поля:** см. [`docs/templates/21_invoice.md`](templates/21_invoice.md) | JSON-конфиг: `config/planfix_fields/template_21.json`
+
 ---
 
 ### Прочие поставщики Конфеты
