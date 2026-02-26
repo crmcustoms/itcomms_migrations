@@ -155,7 +155,7 @@ class PlanfixClient:
                 {
                     "type": 4008,         # filter by template
                     "operator": "equal",
-                    "value": template_id,
+                    "value": {"id": template_id},
                 }
             ],
         }

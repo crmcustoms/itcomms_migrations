@@ -90,7 +90,7 @@ def list_tasks(template_id, offset):
         "offset": offset,
         "pageSize": PAGE_SIZE,
         "fields": "id,name,customFieldData",
-        "filters": [{"type": 4008, "operator": "equal", "value": template_id}],
+        "filters": [{"type": 4008, "operator": "equal", "value": {"id": template_id}}],
     })
 
 
