@@ -1,26 +1,37 @@
 {
-  "_comment": "Planfix custom field IDs for company (contractor) data from Megaplan payer. Set null to append value to description instead.",
-  "company": {
-    "inn":                  { "planfix_field_id": null, "label": "ИНН" },
-    "kpp":                  { "planfix_field_id": null, "label": "КПП" },
-    "ogrn":                 { "planfix_field_id": null, "label": "ОГРН" },
-    "okpo":                 { "planfix_field_id": null, "label": "ОКПО" },
-    "okved":                { "planfix_field_id": null, "label": "ОКВЭД" },
-    "legal_address":        { "planfix_field_id": null, "label": "Юр. адрес" },
-    "actual_address":       { "planfix_field_id": null, "label": "Факт. адрес" },
-    "bank_name":            { "planfix_field_id": null, "label": "Банк" },
-    "bic":                  { "planfix_field_id": null, "label": "БИК" },
-    "current_account":      { "planfix_field_id": null, "label": "Р/с" },
-    "correspondent_account":{ "planfix_field_id": null, "label": "К/с" },
-    "director_name":        { "planfix_field_id": null, "label": "Директор" },
-    "director_post":        { "planfix_field_id": null, "label": "Должность директора" },
-    "megaplan_id":          { "planfix_field_id": null, "label": "Megaplan ID" },
-    "megaplan_type":        { "planfix_field_id": null, "label": "Тип контрагента" },
-    "megaplan_category":    { "planfix_field_id": null, "label": "Категория (Megaplan)" }
+  "_comment": "Planfix custom field IDs for contacts/companies. Source: GET /contact/customfield/list",
+  "contact_fields": {
+    "inn":              { "id": 128783, "name": "ИНН/БИН",                     "type": 0 },
+    "kpp":              { "id": 128791, "name": "КПП",                         "type": 0 },
+    "ogrn":             { "id": 128797, "name": "ОГРН",                        "type": 0 },
+    "legal_name":       { "id": 132147, "name": "Юр. Название",                "type": 0 },
+    "bank_name":        { "id": 128789, "name": "Название банка",              "type": 0 },
+    "current_account":  { "id": 128793, "name": "Расчетный счет",              "type": 0 },
+    "correspondent_account": { "id": 128795, "name": "К/с",                   "type": 0 },
+    "swift":            { "id": 128799, "name": "S.W.I.F.T.",                  "type": 0 },
+    "country":          { "id": 128999, "name": "Страна",                      "type": 0 },
+    "currency":         { "id": 128801, "name": "Валюта",                      "type": 8 },
+    "contact_type":     { "id": 128817, "name": "Тип контакта",                "type": 8 },
+    "megaplan_id":      { "id": 128997, "name": "ID Megaplan",                 "type": 0 },
+    "megaplan_type":    { "id": 128827, "name": "Тип в мегаплан",              "type": 0 },
+    "card_number":      { "id": 128809, "name": "Номер карты",                 "type": 0 },
+    "card_name":        { "id": 128811, "name": "ФИО как на карте",            "type": 0 },
+    "crypto_wallet":    { "id": 128813, "name": "Номер кошелька (Крипта)",     "type": 0 },
+    "crypto_network":   { "id": 128815, "name": "Название сети (Крипта)",      "type": 0 },
+    "doc_contact":      { "id": 128737, "name": "Контакт для сбора документов","type": 0 },
+    "doc_phone":        { "id": 132151, "name": "Контакт для сбора документов телефон", "type": 0 },
+    "doc_email":        { "id": 132153, "name": "Контакт для сбора документов эл. почта", "type": 0 },
+    "doc_messenger":    { "id": 132155, "name": "Контакт для сбора документов мессенджер", "type": 0 },
+    "our_legal_entity": { "id": 128735, "name": "Юр. лицо с нашей стороны",   "type": 8 },
+    "contract_renewal": { "id": 128731, "name": "Пролонгация договора",        "type": 8 },
+    "contract_date":    { "id": 132159, "name": "Дата заключения договора",    "type": 5 }
   },
-  "contact": {
-    "megaplan_id":          { "planfix_field_id": null, "label": "Megaplan ID" }
-  },
+
+  "_fields_to_check_migration": [
+    "inn", "kpp", "ogrn", "legal_name", "bank_name",
+    "current_account", "correspondent_account", "megaplan_id"
+  ],
+
   "phone_type_map": {
     "Мобильный":  1,
     "Сотовый":    1,

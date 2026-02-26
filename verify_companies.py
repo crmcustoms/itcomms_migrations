@@ -3,9 +3,10 @@
 
 Алгоритм:
   1. Перебрать все расходы (шаблоны 15 и 7691) в Planfix.
-  2. Собрать уникальные Planfix-ID контрагентов из поля 130207 ("ID контрагента").
-  3. Для каждого ID: GET /contact/{id} — проверить существование и полноту данных.
-  4. Вывести отчёт: что нашлось, чего нет, у кого пустое описание.
+  2. Собрать уникальные Planfix-ID из поля 130207 ("ID контрагента").
+  3. Для каждого ID: GET /contact/{id} с customFieldData —
+     проверить, что ключевые поля заполнены.
+  4. Вывести отчёт: что нашлось, чего нет, какие поля пустые.
 
 К Megaplan не обращаемся — всё внутри Planfix.
 
@@ -20,10 +21,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterator
 
 from dotenv import load_dotenv
@@ -33,17 +36,26 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Константы
 
-CONTRACTOR_ID_FIELD = 130207   # "ID контрагента" — Planfix-ID перенесённого контрагента
+CONTRACTOR_ID_FIELD = 130207   # "ID контрагента" в расходах — Planfix-ID контакта
 
 TEMPLATES: dict[int, str] = {
     15:   "Прочие поставщики Конфеты",
     7691: "Прочие поставщики безнал",
 }
 
-# Ключевые маркеры в description компании (из миграции реквизитов)
-DESCRIPTION_MARKERS = ["ИНН", "КПП", "ОГРН", "Банк", "БИК", "Р/с", "К/с", "Директор"]
-
 PAGE_SIZE = 100
+
+# Загружаем маппинг полей контактов
+_MAPPING_PATH = Path(__file__).parent / "config" / "field_mapping.json"
+_mapping = json.loads(_MAPPING_PATH.read_text(encoding="utf-8"))
+CONTACT_FIELDS: dict[str, dict] = _mapping["contact_fields"]
+
+# Поля, которые проверяем на заполненность при аудите миграции
+CHECK_KEYS: list[str] = _mapping["_fields_to_check_migration"]
+# {id -> key} для быстрого поиска при разборе customFieldData
+FIELD_ID_TO_KEY: dict[int, str] = {
+    CONTACT_FIELDS[k]["id"]: k for k in CHECK_KEYS
+}
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -72,19 +84,11 @@ class ContactInfo:
     planfix_id: int
     name: str = ""
     is_company: bool = False
-    description: str = ""
     found: bool = False
     error: str = ""
-    # расходы, которые ссылаются на этого контрагента
+    filled_fields: list[str] = field(default_factory=list)   # ключи заполненных полей
+    empty_fields: list[str] = field(default_factory=list)     # ключи пустых полей
     expense_task_ids: list[int] = field(default_factory=list)
-
-    def description_markers_found(self) -> list[str]:
-        """Какие маркеры реквизитов есть в description."""
-        return [m for m in DESCRIPTION_MARKERS if m in (self.description or "")]
-
-    def description_markers_missing(self) -> list[str]:
-        """Какие маркеры реквизитов отсутствуют в description."""
-        return [m for m in DESCRIPTION_MARKERS if m not in (self.description or "")]
 
 
 @dataclass
@@ -94,18 +98,17 @@ class Stats:
     unique_contractors: int = 0
     found_ok: int = 0
     not_found: int = 0
-    found_empty_description: int = 0
+    has_empty_fields: int = 0
     errors: int = 0
 
     def summary(self) -> str:
         return (
             f"расходы={self.total_expenses} "
             f"(без_контрагента={self.expenses_no_contractor}) | "
-            f"уникальных_контрагентов={self.unique_contractors} | "
+            f"уникальных={self.unique_contractors} | "
             f"найдено={self.found_ok} "
             f"не_найдено={self.not_found} "
-            f"пустое_описание={self.found_empty_description} "
-            f"ошибки={self.errors}"
+            f"с_пустыми_полями={self.has_empty_fields}"
         )
 
 
@@ -113,11 +116,25 @@ class Stats:
 # Helpers
 
 
-def _get_custom_field_value(task: dict, field_id: int) -> str:
+def _get_expense_field(task: dict, field_id: int) -> str:
     for entry in task.get("customFieldData") or []:
         if (entry.get("field") or {}).get("id") == field_id:
             return (entry.get("stringValue") or entry.get("value") or "").strip()
     return ""
+
+
+def _parse_contact_fields(contact: dict) -> tuple[list[str], list[str]]:
+    """Вернуть (filled_keys, empty_keys) по CHECK_KEYS из customFieldData контакта."""
+    values: dict[str, str] = {}
+    for entry in contact.get("customFieldData") or []:
+        fid = (entry.get("field") or {}).get("id")
+        if fid in FIELD_ID_TO_KEY:
+            key = FIELD_ID_TO_KEY[fid]
+            values[key] = (entry.get("stringValue") or entry.get("value") or "").strip()
+
+    filled = [k for k in CHECK_KEYS if values.get(k)]
+    empty  = [k for k in CHECK_KEYS if not values.get(k)]
+    return filled, empty
 
 
 def _iter_tasks(planfix, template_id: int) -> Iterator[dict]:
@@ -143,22 +160,18 @@ def _iter_tasks(planfix, template_id: int) -> Iterator[dict]:
 
 
 def collect_contractor_ids(planfix, template_ids: list[int]) -> tuple[dict[int, ContactInfo], Stats]:
-    """Шаг 1: перебрать расходы, собрать уникальные ID контрагентов."""
     contractors: dict[int, ContactInfo] = {}
     stats = Stats()
 
     for template_id in template_ids:
-        tpl_name = TEMPLATES[template_id]
-        logger.info("Перебираю расходы: шаблон %d — %s", template_id, tpl_name)
-
+        logger.info("Перебираю расходы: шаблон %d — %s", template_id, TEMPLATES[template_id])
         for task in _iter_tasks(planfix, template_id):
             stats.total_expenses += 1
             task_id = task["id"]
 
-            raw_id = _get_custom_field_value(task, CONTRACTOR_ID_FIELD)
+            raw_id = _get_expense_field(task, CONTRACTOR_ID_FIELD)
             if not raw_id:
                 stats.expenses_no_contractor += 1
-                logger.debug("Расход #%d — нет ID контрагента", task_id)
                 continue
 
             try:
@@ -174,14 +187,13 @@ def collect_contractor_ids(planfix, template_ids: list[int]) -> tuple[dict[int, 
 
     stats.unique_contractors = len(contractors)
     logger.info(
-        "Собрано: расходов=%d (без контрагента=%d), уникальных контрагентов=%d",
+        "Расходов=%d (без контрагента=%d), уникальных контрагентов=%d",
         stats.total_expenses, stats.expenses_no_contractor, stats.unique_contractors,
     )
     return contractors, stats
 
 
 def verify_contractors(planfix, contractors: dict[int, ContactInfo], stats: Stats) -> None:
-    """Шаг 2: для каждого ID проверить контакт в Planfix."""
     logger.info("Проверяю %d контрагентов в Planfix…", len(contractors))
 
     for i, (contractor_id, info) in enumerate(contractors.items(), 1):
@@ -189,111 +201,81 @@ def verify_contractors(planfix, contractors: dict[int, ContactInfo], stats: Stat
         try:
             contact = planfix.get_contact(
                 contractor_id,
-                fields="id,name,isCompany,description",
+                fields="id,name,isCompany,customFieldData",
             )
             info.found = True
             info.name = contact.get("name") or ""
             info.is_company = bool(contact.get("isCompany"))
-            info.description = contact.get("description") or ""
+            info.filled_fields, info.empty_fields = _parse_contact_fields(contact)
 
-            if not info.description.strip():
-                stats.found_empty_description += 1
+            if info.empty_fields:
+                stats.has_empty_fields += 1
+                empty_names = [CONTACT_FIELDS[k]["name"] for k in info.empty_fields]
                 logger.warning(
-                    "  contact:%d  %-50s  → описание ПУСТО (реквизиты не мигрировали?)",
-                    contractor_id, info.name,
+                    "contact:%d  %-45s  → пустые поля: %s",
+                    contractor_id, info.name, ", ".join(empty_names),
                 )
             else:
-                missing = info.description_markers_missing()
-                if missing:
-                    logger.info(
-                        "  contact:%d  %-50s  → описание есть, отсутствуют маркеры: %s",
-                        contractor_id, info.name, ", ".join(missing),
-                    )
-                else:
-                    logger.debug(
-                        "  contact:%d  %-50s  → OK, все маркеры найдены",
-                        contractor_id, info.name,
-                    )
+                logger.debug("contact:%d  %-45s  → OK", contractor_id, info.name)
+
             stats.found_ok += 1
 
         except Exception as exc:
             info.found = False
             info.error = str(exc)
             stats.not_found += 1
-            logger.warning(
-                "  contact:%d  → НЕ НАЙДЕН в Planfix: %s", contractor_id, exc
-            )
+            logger.warning("contact:%d  → НЕ НАЙДЕН: %s", contractor_id, exc)
 
 
 def print_report(contractors: dict[int, ContactInfo], stats: Stats) -> None:
-    """Итоговый отчёт в stdout."""
     print("\n" + "=" * 70)
-    print("ИТОГОВЫЙ ОТЧЁТ ПРОВЕРКИ МИГРАЦИИ КОНТРАГЕНТОВ")
+    print("ОТЧЁТ ПРОВЕРКИ МИГРАЦИИ КОНТРАГЕНТОВ")
     print("=" * 70)
-    print(f"  Всего расходов обработано:      {stats.total_expenses}")
-    print(f"  Расходов без ID контрагента:    {stats.expenses_no_contractor}")
-    print(f"  Уникальных контрагентов:        {stats.unique_contractors}")
-    print(f"  Найдено в Planfix:              {stats.found_ok}")
-    print(f"  НЕ найдено (ошибка GET):        {stats.not_found}")
-    print(f"  Найдено, но описание пустое:    {stats.found_empty_description}")
+    print(f"  Всего расходов:                {stats.total_expenses}")
+    print(f"  Расходов без ID контрагента:   {stats.expenses_no_contractor}")
+    print(f"  Уникальных контрагентов:       {stats.unique_contractors}")
+    print(f"  Найдено в Planfix:             {stats.found_ok}")
+    print(f"  НЕ найдено (ошибка GET):       {stats.not_found}")
+    print(f"  Найдено, но есть пустые поля:  {stats.has_empty_fields}")
     print()
 
     not_found = [(cid, info) for cid, info in contractors.items() if not info.found]
     if not_found:
         print(f"--- НЕ НАЙДЕНЫ В PLANFIX ({len(not_found)}) ---")
         for cid, info in not_found:
-            expense_list = ", ".join(f"#{t}" for t in info.expense_task_ids[:5])
+            expenses = ", ".join(f"#{t}" for t in info.expense_task_ids[:5])
             if len(info.expense_task_ids) > 5:
-                expense_list += f" … (+{len(info.expense_task_ids) - 5})"
-            print(f"  contact:{cid:<8}  расходы: {expense_list}")
-            print(f"            ошибка: {info.error}")
+                expenses += f" (+{len(info.expense_task_ids) - 5})"
+            print(f"  contact:{cid:<8}  расходы: {expenses}")
         print()
 
-    empty_desc = [(cid, info) for cid, info in contractors.items()
-                  if info.found and not info.description.strip()]
-    if empty_desc:
-        print(f"--- ПУСТОЕ ОПИСАНИЕ (реквизиты не мигрировали?) ({len(empty_desc)}) ---")
-        for cid, info in empty_desc:
+    with_empty = [(cid, info) for cid, info in contractors.items()
+                  if info.found and info.empty_fields]
+    if with_empty:
+        print(f"--- ПУСТЫЕ ПОЛЯ (миграция неполная?) ({len(with_empty)}) ---")
+        for cid, info in with_empty:
             kind = "Компания" if info.is_company else "Контакт"
+            empty_names = [CONTACT_FIELDS[k]["name"] for k in info.empty_fields]
             print(f"  contact:{cid:<8}  {kind}  {info.name}")
-        print()
-
-    partial_desc = [(cid, info) for cid, info in contractors.items()
-                    if info.found and info.description.strip() and info.description_markers_missing()]
-    if partial_desc:
-        print(f"--- НЕПОЛНОЕ ОПИСАНИЕ (часть маркеров отсутствует) ({len(partial_desc)}) ---")
-        for cid, info in partial_desc:
-            kind = "Компания" if info.is_company else "Контакт"
-            missing = ", ".join(info.description_markers_missing())
-            print(f"  contact:{cid:<8}  {kind}  {info.name}")
-            print(f"            нет маркеров: {missing}")
+            print(f"            нет: {', '.join(empty_names)}")
         print()
 
     print("=" * 70)
 
 
 def save_csv(contractors: dict[int, ContactInfo], csv_path: str) -> None:
-    """Сохранить полный отчёт в CSV."""
     with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "planfix_id", "name", "is_company", "found",
-            "description_empty", "markers_found", "markers_missing",
-            "expense_count", "expense_task_ids", "error",
-        ])
+        header = ["planfix_id", "name", "is_company", "found", "expense_count"]
+        header += [CONTACT_FIELDS[k]["name"] for k in CHECK_KEYS]
+        header += ["error"]
+        writer.writerow(header)
+
         for cid, info in contractors.items():
-            writer.writerow([
-                cid,
-                info.name,
-                info.is_company,
-                info.found,
-                not bool(info.description.strip()) if info.found else "",
-                "|".join(info.description_markers_found()),
-                "|".join(info.description_markers_missing()),
-                len(info.expense_task_ids),
-                "|".join(str(t) for t in info.expense_task_ids),
-                info.error,
-            ])
+            row = [cid, info.name, info.is_company, info.found, len(info.expense_task_ids)]
+            row += ["OK" if k in info.filled_fields else "ПУСТО" for k in CHECK_KEYS]
+            row += [info.error]
+            writer.writerow(row)
     logger.info("CSV сохранён: %s", csv_path)
 
 
@@ -304,8 +286,7 @@ def save_csv(contractors: dict[int, ContactInfo], csv_path: str) -> None:
 def _require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
-        print(f"ERROR: env variable {name!r} is not set. Copy .env.example to .env",
-              file=sys.stderr)
+        print(f"ERROR: env variable {name!r} is not set.", file=sys.stderr)
         sys.exit(1)
     return value
 
@@ -316,40 +297,33 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--template", type=int, choices=[15, 7691],
-                        help="Проверить только один шаблон расходов (по умолчанию — оба)")
-    parser.add_argument("--csv", metavar="FILE",
-                        help="Сохранить результат в CSV-файл")
+                        help="Только один шаблон (по умолчанию — оба)")
+    parser.add_argument("--csv", metavar="FILE", help="Сохранить отчёт в CSV")
     args = parser.parse_args()
 
     log_level = os.getenv("LOG_LEVEL", "INFO")
     _setup_logging(log_level)
 
-    pf_delay = float(os.getenv("PLANFIX_DELAY", "1.0"))
     planfix_host  = _require_env("PLANFIX_HOST")
     planfix_token = _require_env("PLANFIX_TOKEN")
+    pf_delay = float(os.getenv("PLANFIX_DELAY", "1.0"))
 
     from src.planfix.client import PlanfixClient
     planfix = PlanfixClient(planfix_host, planfix_token, delay=pf_delay)
 
-    logger.info("verify_companies.py — проверка миграции контрагентов (только Planfix)")
+    logger.info("verify_companies.py — аудит миграции (только Planfix)")
 
     template_ids = [args.template] if args.template else list(TEMPLATES)
 
-    # Шаг 1 — собрать ID из расходов
     contractors, stats = collect_contractor_ids(planfix, template_ids)
-
-    # Шаг 2 — проверить каждый контакт в Planfix
     verify_contractors(planfix, contractors, stats)
-
-    # Отчёт
     print_report(contractors, stats)
     logger.info("=== ИТОГО: %s ===", stats.summary())
 
     if args.csv:
         save_csv(contractors, args.csv)
 
-    # Выход с ошибкой если есть проблемы
-    if stats.not_found or stats.found_empty_description:
+    if stats.not_found or stats.has_empty_fields:
         sys.exit(1)
 
 
