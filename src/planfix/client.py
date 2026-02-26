@@ -94,19 +94,33 @@ class PlanfixClient:
             body["onlyChanged"] = only_changed
         return self._request("POST", "/contact/list", json=body)
 
-    def find_by_source_object_id(
-        self, source_object_id: str, is_company: bool | None = None
+    def find_contact_by_custom_field(
+        self,
+        field_id: int,
+        value: str,
+        fields: str = "id,name,isCompany",
     ) -> dict | None:
-        """Search for a contact/company by Megaplan ID stored in sourceObjectId.
+        """POST /contact/list — найти контакт/компанию по значению кастомного поля.
 
-        Uses ComplexContactFilter type 4231 (Contact number) is NOT what we need;
-        we look by filters on sourceObjectId via the list endpoint with sourceId tag.
-        Falls back to full scan if not found via source index.
+        Использует filter type 5006 (текстовое кастомное поле, equal).
+        Возвращает первый совпавший контакт или None.
         """
-        # Planfix doesn't expose a direct sourceObjectId filter in REST,
-        # so we use the sourceId/onlyChanged mechanism.
-        # For a migration, we rely on our local id_mapping.json instead.
-        return None
+        body = {
+            "offset": 0,
+            "pageSize": 10,
+            "fields": fields,
+            "filters": [
+                {
+                    "type": 5006,
+                    "field": {"id": field_id},
+                    "operator": "equal",
+                    "value": value,
+                }
+            ],
+        }
+        result = self._request("POST", "/contact/list", json=body)
+        contacts = result.get("contacts") or result.get("data") or []
+        return contacts[0] if contacts else None
 
     # ------------------------------------------------------------------
     # Files
