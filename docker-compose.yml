@@ -6,6 +6,6 @@ services:
     ports:
       - "8002:8000"
     volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
+      - .:/app
+      - /app/__pycache__
     restart: unless-stopped
