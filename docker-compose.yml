@@ -1,0 +1,12 @@
+services:
+  itcomms:
+    build: .
+    container_name: itcomms-scripts
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./not_found_tasks.csv:/app/not_found_tasks.csv
+      - ./fill_megaplan_result.csv:/app/fill_megaplan_result.csv
+      - ./create_contacts_result.csv:/app/create_contacts_result.csv
+    restart: unless-stopped
