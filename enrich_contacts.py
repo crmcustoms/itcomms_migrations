@@ -50,7 +50,7 @@ MEGAPLAN_DELAY = float(os.getenv("MEGAPLAN_DELAY", "0.5"))
 # =============================================================================
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -291,6 +291,12 @@ def main() -> None:
                 stats["no_data"] += 1
                 results.append(row)
                 continue
+
+            # DEBUG: show all top-level keys and non-empty values
+            log.debug("  RAW keys: %s", list(mp_data.keys()))
+            for k, v in mp_data.items():
+                if v and v != [] and v != {} and v != "":
+                    log.info("  RAW [%s] = %s", k, json.dumps(v, ensure_ascii=False)[:150])
 
             # Log what we found
             phones      = extract_phones(mp_data)
