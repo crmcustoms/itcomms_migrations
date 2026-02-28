@@ -50,7 +50,7 @@ MEGAPLAN_DELAY = float(os.getenv("MEGAPLAN_DELAY", "0.5"))
 # =============================================================================
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -124,8 +124,11 @@ EMAIL_TYPE_MAP = {
 
 
 def extract_phones(mp_data: dict) -> list[dict]:
-    """Извлекает телефоны из карточки Мегаплана."""
+    """Извлекает телефоны из карточки Мегаплана.
+    Поля: phones[].number/value, или extraFields с типом phone.
+    """
     phones = []
+    # Стандартное поле phones
     for ph in mp_data.get("phones", []) or []:
         number = ph.get("number") or ph.get("value") or ""
         if not number:
@@ -133,24 +136,46 @@ def extract_phones(mp_data: dict) -> list[dict]:
         raw_type = (ph.get("type") or "work").lower()
         pf_type = PHONE_TYPE_MAP.get(raw_type, "work")
         phones.append({"type": pf_type, "number": number})
+    # extraFields — кастомные поля
+    for field in mp_data.get("extraFields", []) or []:
+        if field.get("type") == "phone":
+            number = field.get("value") or ""
+            if number:
+                phones.append({"type": "work", "number": number})
     return phones
 
 
 def extract_emails(mp_data: dict) -> list[dict]:
-    """Извлекает email из карточки Мегаплана."""
+    """Извлекает email из карточки Мегаплана.
+    Поля: emails[].value/address, loginEmail, extraFields с типом email.
+    """
     emails = []
+    seen = set()
+
+    def add(address: str, etype: str = "work") -> None:
+        if address and "@" in address and address not in seen:
+            seen.add(address)
+            emails.append({"type": etype, "address": address})
+
+    # Стандартное поле emails
     for em in mp_data.get("emails", []) or []:
         address = em.get("value") or em.get("address") or em.get("email") or ""
-        if not address or "@" not in address:
-            continue
         raw_type = (em.get("type") or "work").lower()
-        pf_type = EMAIL_TYPE_MAP.get(raw_type, "work")
-        emails.append({"type": pf_type, "address": address})
+        add(address, EMAIL_TYPE_MAP.get(raw_type, "work"))
+
+    # loginEmail — системный email
+    add(mp_data.get("loginEmail") or "")
+
+    # extraFields
+    for field in mp_data.get("extraFields", []) or []:
+        if field.get("type") == "email":
+            add(field.get("value") or "")
+
     return emails
 
 
 def extract_description(mp_data: dict) -> str:
-    """Собирает адрес и комментарий в текстовое описание."""
+    """Собирает адрес, комментарий и теги в текстовое описание."""
     parts = []
 
     # Адрес
@@ -174,11 +199,16 @@ def extract_description(mp_data: dict) -> str:
     if comment:
         parts.append(comment)
 
+    # Теги
+    tags = [t.get("name") for t in (mp_data.get("tags") or []) if t.get("name")]
+    if tags:
+        parts.append("Теги: " + ", ".join(tags))
+
     return "\n".join(parts)
 
 
 def extract_site(mp_data: dict) -> str:
-    return mp_data.get("site") or mp_data.get("website") or ""
+    return mp_data.get("site") or mp_data.get("website") or mp_data.get("url") or ""
 
 
 def extract_files(mp_data: dict) -> list[dict]:
@@ -291,12 +321,6 @@ def main() -> None:
                 stats["no_data"] += 1
                 results.append(row)
                 continue
-
-            # DEBUG: show all top-level keys and non-empty values
-            log.debug("  RAW keys: %s", list(mp_data.keys()))
-            for k, v in mp_data.items():
-                if v and v != [] and v != {} and v != "":
-                    log.info("  RAW [%s] = %s", k, json.dumps(v, ensure_ascii=False)[:150])
 
             # Log what we found
             phones      = extract_phones(mp_data)
