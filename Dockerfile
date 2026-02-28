@@ -12,5 +12,6 @@ COPY . .
 # Create dirs for outputs
 RUN mkdir -p logs data
 
-# Keep container alive so we can docker exec into it
-CMD ["tail", "-f", "/dev/null"]
+EXPOSE 8000
+
+CMD ["python", "-u", "server.py"]
