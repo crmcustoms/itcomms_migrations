@@ -193,7 +193,7 @@ def get_tax_rate(invoice_data: dict) -> int | None:
 def load_planfix_invoices() -> dict[str, dict]:
     """Возвращает {invoice_number: {"id": task_id, "has_date": bool, "has_tax": bool}}."""
     log.info("Loading all Planfix Invoice tasks (template=%d)...", INVOICE_TEMPLATE_ID)
-    fields = f"id,name,{PF_INVOICE_NUMBER_FIELD},{PF_PAYMENT_DATE_FIELD},dataTags"
+    fields = f"id,name,{PF_INVOICE_NUMBER_FIELD},{PF_PAYMENT_DATE_FIELD},128159"
     result = {}
     offset = 0
     page_size = 100
@@ -216,6 +216,7 @@ def load_planfix_invoices() -> dict[str, dict]:
 
             invoice_number = None
             has_date = False
+            has_tax = False
 
             for entry in cfd:
                 fid = (entry.get("field") or {}).get("id")
@@ -224,12 +225,19 @@ def load_planfix_invoices() -> dict[str, dict]:
                     invoice_number = (val or "").strip()
                 elif fid == PF_PAYMENT_DATE_FIELD:
                     has_date = bool(val)
+                elif fid == 128159:
+                    # TAX aggregate field — если > 0, запись аналитики уже есть
+                    try:
+                        has_tax = float(val or 0) > 0
+                    except (TypeError, ValueError):
+                        has_tax = False
 
             if invoice_number:
                 result[invoice_number] = {
                     "id": task_id,
                     "name": task.get("name", ""),
                     "has_date": has_date,
+                    "has_tax": has_tax,
                 }
 
         log.info("  fetched %d tasks (offset=%d)", len(tasks), offset)
@@ -385,17 +393,15 @@ def main() -> None:
         elif pf_task["has_date"] and not args.overwrite:
             log.info("  task #%d: date already set, skipping", task_id)
 
-        # 5b. TAX аналитика — проверяем реальные записи
-        if tax_rate is not None:
-            has_tax = task_has_tax_entries(task_id)
-            if not has_tax or args.overwrite:
-                try:
-                    row["tax"] = create_tax_entry(task_id, tax_rate, dry_run)
-                except Exception as e:
-                    log.error("  task #%d TAX write error: %s", task_id, e)
-                    errors.append(f"tax: {str(e)[:100]}")
-            else:
-                log.info("  task #%d: TAX already set, skipping", task_id)
+        # 5b. TAX аналитика
+        if tax_rate is not None and (not pf_task["has_tax"] or args.overwrite):
+            try:
+                row["tax"] = create_tax_entry(task_id, tax_rate, dry_run)
+            except Exception as e:
+                log.error("  task #%d TAX write error: %s", task_id, e)
+                errors.append(f"tax: {str(e)[:100]}")
+        elif pf_task["has_tax"] and not args.overwrite:
+            log.info("  task #%d: TAX already set, skipping", task_id)
 
         if errors:
             stats["error"] += 1
