@@ -116,7 +116,7 @@ def pf_req(method: str, path: str, **kwargs) -> dict:
 
 def mp_req(path: str) -> dict:
     for attempt in range(4):
-        time.sleep(MEGAPLAN_DELAY if attempt == 0 else 5 * attempt)
+        time.sleep(MEGAPLAN_DELAY if attempt == 0 else 2 * attempt)
         try:
             r = _mp.get(f"{MEGAPLAN_HOST}/api/v3{path}")
         except (SSLError, ConnectionError) as e:

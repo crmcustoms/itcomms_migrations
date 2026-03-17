@@ -35,6 +35,7 @@ SCRIPTS = {
     "create_contacts":        "create_contacts_and_fill.py --live",
     "enrich_contacts":        "enrich_contacts.py --live",
     "fill_payment_date":      "fill_payment_date.py --live",
+    "fill_invoice_payment":   "fill_invoice_payment.py --live",
     "run_migration":          "run_migration.py",
 }
 
