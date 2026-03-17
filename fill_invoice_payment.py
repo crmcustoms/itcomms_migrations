@@ -137,7 +137,7 @@ def mp_req(path: str) -> dict:
 
 def fetch_n8n_invoices() -> list[dict]:
     log.info("Fetching invoice list from n8n webhook...")
-    r = requests.get(N8N_WEBHOOK_URL, timeout=30)
+    r = requests.get(N8N_WEBHOOK_URL, timeout=120)
     r.raise_for_status()
     data = r.json()
     log.info("  Got %d invoices from n8n", len(data))
