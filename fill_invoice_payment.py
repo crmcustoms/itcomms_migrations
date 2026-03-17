@@ -193,7 +193,7 @@ def get_tax_rate(invoice_data: dict) -> int | None:
 def load_planfix_invoices() -> dict[str, dict]:
     """Возвращает {invoice_number: {"id": task_id, "has_date": bool, "has_tax": bool}}."""
     log.info("Loading all Planfix Invoice tasks (template=%d)...", INVOICE_TEMPLATE_ID)
-    fields = f"id,name,{PF_INVOICE_NUMBER_FIELD},{PF_PAYMENT_DATE_FIELD},128159"
+    fields = f"id,name,{PF_INVOICE_NUMBER_FIELD},{PF_PAYMENT_DATE_FIELD}"
     result = {}
     offset = 0
     page_size = 100
@@ -212,11 +212,9 @@ def load_planfix_invoices() -> dict[str, dict]:
         for task in tasks:
             task_id = task["id"]
             cfd = task.get("customFieldData") or []
-            data_tags = task.get("dataTags") or []
 
             invoice_number = None
             has_date = False
-            has_tax = False
 
             for entry in cfd:
                 fid = (entry.get("field") or {}).get("id")
@@ -225,19 +223,12 @@ def load_planfix_invoices() -> dict[str, dict]:
                     invoice_number = (val or "").strip()
                 elif fid == PF_PAYMENT_DATE_FIELD:
                     has_date = bool(val)
-                elif fid == 128159:
-                    # TAX aggregate field — если > 0, запись аналитики уже есть
-                    try:
-                        has_tax = float(val or 0) > 0
-                    except (TypeError, ValueError):
-                        has_tax = False
 
             if invoice_number:
                 result[invoice_number] = {
                     "id": task_id,
                     "name": task.get("name", ""),
                     "has_date": has_date,
-                    "has_tax": has_tax,
                 }
 
         log.info("  fetched %d tasks (offset=%d)", len(tasks), offset)
@@ -250,19 +241,33 @@ def load_planfix_invoices() -> dict[str, dict]:
 
 
 # =============================================================================
-# PLANFIX: проверить есть ли реальные записи TAX у задачи
+# PLANFIX: предзагрузить все задачи с записями TAX
 # =============================================================================
 
-def task_has_tax_entries(task_id: int) -> bool:
-    """Запрашивает реальные записи аналитики TAX для задачи."""
-    resp = pf_req("POST", f"/datatag/{TAX_DATATAG_ID}/entry/list", json={
-        "offset": 0,
-        "pageSize": 1,
-        "fields": "key",
-        "filters": [{"type": 12, "operator": "equal", "value": {"id": task_id}}],
-    })
-    entries = resp.get("dataTagEntries") or []
-    return len(entries) > 0
+def load_tasks_with_tax() -> set[int]:
+    """Загружает все записи аналитики TAX и возвращает set task_id."""
+    log.info("Loading existing TAX datatag entries...")
+    task_ids: set[int] = set()
+    offset = 0
+    page_size = 100
+
+    while True:
+        resp = pf_req("POST", f"/datatag/{TAX_DATATAG_ID}/entry/list", json={
+            "offset": offset,
+            "pageSize": page_size,
+            "fields": "key,task",
+        })
+        entries = resp.get("dataTagEntries") or []
+        for e in entries:
+            tid = (e.get("task") or {}).get("id")
+            if tid:
+                task_ids.add(tid)
+        if len(entries) < page_size:
+            break
+        offset += page_size
+
+    log.info("  %d tasks already have TAX entries", len(task_ids))
+    return task_ids
 
 
 # =============================================================================
@@ -296,9 +301,12 @@ def create_tax_entry(task_id: int, tax_rate: int, dry_run: bool) -> str:
                  task_id, tax_rate, directory_key)
         return f"{tax_rate}%"
 
-    pf_req("POST", f"/task/{task_id}/datatag/{TAX_DATATAG_ID}/entry/", json={
-        "customFieldData": [
-            {"field": {"id": TAX_TYPE_FIELD_ID}, "value": directory_key}
+    pf_req("POST", f"/task/{task_id}/datatags/", json={
+        "dataTag": {"id": TAX_DATATAG_ID},
+        "items": [
+            {"customFieldData": [
+                {"field": {"id": TAX_TYPE_FIELD_ID}, "value": directory_key}
+            ]}
         ]
     })
     return f"{tax_rate}%"
@@ -325,6 +333,9 @@ def main() -> None:
 
     # 2. Загрузить все Invoice задачи из Планфикс
     pf_invoices = load_planfix_invoices()
+
+    # 3. Загрузить set task_id, у которых уже есть TAX аналитика
+    tasks_with_tax = load_tasks_with_tax()
 
     stats = defaultdict(int)
     rows = []
@@ -394,13 +405,16 @@ def main() -> None:
             log.info("  task #%d: date already set, skipping", task_id)
 
         # 5b. TAX аналитика
-        if tax_rate is not None and (not pf_task["has_tax"] or args.overwrite):
+        task_has_tax = task_id in tasks_with_tax
+        if tax_rate is not None and (not task_has_tax or args.overwrite):
             try:
                 row["tax"] = create_tax_entry(task_id, tax_rate, dry_run)
+                if not dry_run:
+                    tasks_with_tax.add(task_id)
             except Exception as e:
                 log.error("  task #%d TAX write error: %s", task_id, e)
                 errors.append(f"tax: {str(e)[:100]}")
-        elif pf_task["has_tax"] and not args.overwrite:
+        elif task_has_tax and not args.overwrite:
             log.info("  task #%d: TAX already set, skipping", task_id)
 
         if errors:
