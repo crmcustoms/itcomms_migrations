@@ -110,23 +110,16 @@ def mp_get(params: dict) -> dict:
 # =============================================================================
 
 def fetch_megaplan_invoices() -> list[dict]:
-    log.info("Fetching Megaplan invoices (pages)...")
-    all_invoices = []
-    page = 0
-    limit = 100
-
-    while True:
-        data = mp_get({"limit": limit, "pageNumber": page})
-        items = data.get("data", [])
-        meta  = data.get("meta", {}).get("pagination", {})
-        log.info("  page=%d  got=%d  total=%s", page, len(items), meta.get("count", "?"))
-        all_invoices.extend(items)
-        if not meta.get("hasMoreNext", False):
-            break
-        page += 1
-
-    log.info("Total from Megaplan: %d invoices", len(all_invoices))
-    return all_invoices
+    log.info("Fetching Megaplan invoices...")
+    # Сначала узнаём общее количество
+    data  = mp_get({"limit": 1})
+    total = data.get("meta", {}).get("pagination", {}).get("count", 1000)
+    log.info("  Total in Megaplan: %d", total)
+    # Запрашиваем все одним запросом
+    data  = mp_get({"limit": total + 10})
+    items = data.get("data", [])
+    log.info("  Got %d invoices", len(items))
+    return items
 
 
 def parse_mp_date(d) -> datetime.date | None:
