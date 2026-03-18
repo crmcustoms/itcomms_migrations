@@ -116,7 +116,7 @@ def fetch_megaplan_invoices() -> list[dict]:
     limit = 100
 
     while True:
-        data = mp_get({"limit": limit, "page": page})
+        data = mp_get({"limit": limit, "pageNumber": page})
         items = data.get("data", [])
         meta  = data.get("meta", {}).get("pagination", {})
         log.info("  page=%d  got=%d  total=%s", page, len(items), meta.get("count", "?"))
