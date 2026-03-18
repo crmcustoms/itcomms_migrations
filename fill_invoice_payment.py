@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-fill_invoice_payment.py — заполнение даты оплаты и суммы в Invoice задачах Планфикс.
+fill_invoice_payment.py — заполнение фактической даты оплаты в Invoice задачах Планфикс.
 
 Алгоритм:
-  1. GET n8n webhook → список счетов
-  2. Фильтр по property_invoicedate: август 2025 — февраль 2026
-  3. Для каждого счёта:
-       - property_dedlinepay  → поле 128157 (Invoice Payment Date)
-       - property_sum_fact    → поле 128161 (Payment Amount)
-  4. Находит задачу в Планфикс (шаблон 21) по полю 128167 (Invoice Number) = property_invoice_name
+  1. GET n8n webhook → список счетов, фильтр по property_invoicedate (авг 2025 – фев 2026)
+  2. Для каждого счёта → GET Megaplan /api/v3/invoice/{property_invoiseidmp}
+  3. Берёт actualPaymentDate → пишет в поле 128157 (Invoice Payment Date)
+  4. Находит задачу в Планфикс (шаблон 21) по полю 128167 = property_invoice_name
 
 Запуск:
-    python fill_invoice_payment.py           # dry-run, показывает что будет
+    python fill_invoice_payment.py           # dry-run
     python fill_invoice_payment.py --live    # реальная запись
     python fill_invoice_payment.py --live --overwrite  # перезаписать уже заполненные
 """
@@ -31,31 +29,23 @@ from requests.exceptions import ConnectionError, SSLError
 
 load_dotenv()
 
-# =============================================================================
-# CONFIG
-# =============================================================================
-
-PLANFIX_HOST  = os.getenv("PLANFIX_HOST",  "https://itcomms.planfix.com")
-PLANFIX_TOKEN = os.getenv("PLANFIX_TOKEN", "")
-PLANFIX_DELAY = float(os.getenv("PLANFIX_DELAY", "0.5"))
+PLANFIX_HOST   = os.getenv("PLANFIX_HOST",  "https://itcomms.planfix.com")
+PLANFIX_TOKEN  = os.getenv("PLANFIX_TOKEN", "")
+MEGAPLAN_HOST  = os.getenv("MEGAPLAN_HOST", "https://likhtman.megaplan.ru")
+MEGAPLAN_TOKEN = os.getenv("MEGAPLAN_TOKEN", "")
+PLANFIX_DELAY  = float(os.getenv("PLANFIX_DELAY",  "0.5"))
+MEGAPLAN_DELAY = float(os.getenv("MEGAPLAN_DELAY", "0.3"))
 
 N8N_WEBHOOK_URL = "https://n8n.crmcustoms.com/webhook/ebcec118-f1fc-4214-9586-a539fb92a0e4"
 
-# Фильтр по дате счёта
 DATE_FROM = datetime.date(2025, 8, 1)
 DATE_TO   = datetime.date(2026, 2, 28)
 
-# Планфикс: шаблон Invoice (template id=21)
 INVOICE_TEMPLATE_ID     = 21
-PF_INVOICE_NUMBER_FIELD = 128167   # Invoice Number (text)
-PF_PAYMENT_DATE_FIELD   = 128157   # Invoice Payment Date (date)
-PF_PAYMENT_AMOUNT_FIELD = 128161   # Payment Amount (number)
+PF_INVOICE_NUMBER_FIELD = 128167
+PF_PAYMENT_DATE_FIELD   = 128157
 
 RESULT_CSV = "fill_invoice_payment_result.csv"
-
-# =============================================================================
-# LOGGING
-# =============================================================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,37 +57,48 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# =============================================================================
-# HTTP SESSION
-# =============================================================================
-
 _pf = requests.Session()
 _pf.headers.update({"Authorization": f"Bearer {PLANFIX_TOKEN}", "Content-Type": "application/json"})
 
+_mp = requests.Session()
+_mp.headers.update({"Authorization": f"Bearer {MEGAPLAN_TOKEN}", "Content-Type": "application/json"})
 
-def pf_req(method: str, path: str, **kwargs) -> dict:
+
+def pf_req(method, path, **kwargs):
     for attempt in range(4):
         time.sleep(PLANFIX_DELAY if attempt == 0 else 5 * attempt)
         try:
             r = _pf.request(method, f"{PLANFIX_HOST}/rest{path}", **kwargs)
         except (SSLError, ConnectionError) as e:
-            log.warning("Planfix connection error, retry %d/4: %s", attempt + 1, e)
+            log.warning("Planfix error retry %d: %s", attempt + 1, e)
             continue
         if r.status_code == 429:
             time.sleep(int(r.headers.get("Retry-After", 10)))
             continue
         if not r.ok:
-            raise RuntimeError(f"Planfix {method} {path} → {r.status_code}: {r.text[:300]}")
+            raise RuntimeError(f"Planfix {r.status_code}: {r.text[:200]}")
         return r.json() if r.text.strip() else {}
-    raise RuntimeError(f"Planfix {method} {path} failed after 4 retries")
+    raise RuntimeError("Planfix failed after 4 retries")
 
 
-# =============================================================================
-# HELPERS
-# =============================================================================
+def mp_get(invoice_id):
+    for attempt in range(3):
+        time.sleep(MEGAPLAN_DELAY if attempt == 0 else 3 * attempt)
+        try:
+            r = _mp.get(f"{MEGAPLAN_HOST}/api/v3/invoice/{invoice_id}", timeout=15)
+        except (SSLError, ConnectionError) as e:
+            log.warning("Megaplan error retry %d: %s", attempt + 1, e)
+            continue
+        if r.status_code == 404:
+            return None
+        if not r.ok:
+            log.warning("Megaplan %s → %d", invoice_id, r.status_code)
+            return None
+        return r.json().get("data")
+    return None
 
-def parse_date_ddmmyyyy(s: str) -> datetime.date | None:
-    """Парсит "DD.MM.YYYY" → date. Возвращает None если пусто или ошибка."""
+
+def parse_ddmmyyyy(s):
     if not s or not s.strip():
         return None
     try:
@@ -106,152 +107,98 @@ def parse_date_ddmmyyyy(s: str) -> datetime.date | None:
         return None
 
 
-def date_to_ts(d: datetime.date) -> int:
-    """date → Unix timestamp UTC полночь."""
-    return int(datetime.datetime(d.year, d.month, d.day, tzinfo=datetime.timezone.utc).timestamp())
+def parse_actual_payment_date(data):
+    apd = data.get("actualPaymentDate")
+    if not apd:
+        return None
+    value = apd.get("value") if isinstance(apd, dict) else str(apd)
+    if not value:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        d = dt.date()
+        return int(datetime.datetime(d.year, d.month, d.day, tzinfo=datetime.timezone.utc).timestamp())
+    except Exception:
+        return None
 
 
-# =============================================================================
-# N8N: список счетов
-# =============================================================================
-
-def fetch_n8n_invoices() -> list[dict]:
-    log.info("Fetching invoice list from n8n webhook...")
-    r = requests.get(N8N_WEBHOOK_URL, timeout=120)
-    r.raise_for_status()
-    data = r.json()
-    log.info("  Got %d invoices from n8n", len(data))
-    return data
-
-
-def filter_by_period(invoices: list[dict]) -> list[dict]:
-    """Оставляет только счета с property_invoicedate в диапазоне DATE_FROM – DATE_TO."""
-    result = []
-    for inv in invoices:
-        d = parse_date_ddmmyyyy(inv.get("property_invoicedate") or "")
-        if d and DATE_FROM <= d <= DATE_TO:
-            result.append(inv)
-    log.info("  After date filter (%s – %s): %d invoices",
-             DATE_FROM, DATE_TO, len(result))
-    return result
-
-
-# =============================================================================
-# PLANFIX: загрузить все Invoice задачи (шаблон 21)
-# =============================================================================
-
-def load_planfix_invoices() -> dict[str, dict]:
-    """Возвращает {invoice_number: {"id": task_id, "has_date": bool, "has_amount": bool}}."""
-    log.info("Loading all Planfix Invoice tasks (template=%d)...", INVOICE_TEMPLATE_ID)
-    fields = f"id,name,{PF_INVOICE_NUMBER_FIELD},{PF_PAYMENT_DATE_FIELD},{PF_PAYMENT_AMOUNT_FIELD}"
+def load_planfix_invoices():
+    log.info("Loading Planfix Invoice tasks...")
+    fields = f"id,name,{PF_INVOICE_NUMBER_FIELD},{PF_PAYMENT_DATE_FIELD}"
     result = {}
     offset = 0
-    page_size = 100
-
     while True:
         resp = pf_req("POST", "/task/list", json={
-            "offset": offset,
-            "pageSize": page_size,
-            "fields": fields,
+            "offset": offset, "pageSize": 100, "fields": fields,
             "filters": [{"type": 325, "operator": "equal", "value": INVOICE_TEMPLATE_ID}],
         })
-        tasks = resp.get("tasks") or resp.get("data") or []
+        tasks = resp.get("tasks") or []
         if not tasks:
             break
-
         for task in tasks:
-            task_id = task["id"]
-            cfd = task.get("customFieldData") or []
-            invoice_number = None
+            inv_num = None
             has_date = False
-            has_amount = False
-
-            for entry in cfd:
-                fid = (entry.get("field") or {}).get("id")
-                val = entry.get("value")
+            for e in task.get("customFieldData") or []:
+                fid = (e.get("field") or {}).get("id")
                 if fid == PF_INVOICE_NUMBER_FIELD:
-                    invoice_number = (val or "").strip()
+                    inv_num = (e.get("value") or "").strip()
                 elif fid == PF_PAYMENT_DATE_FIELD:
-                    has_date = bool(val)
-                elif fid == PF_PAYMENT_AMOUNT_FIELD:
-                    has_amount = bool(val)
-
-            if invoice_number:
-                result[invoice_number] = {
-                    "id": task_id,
-                    "name": task.get("name", ""),
-                    "has_date": has_date,
-                    "has_amount": has_amount,
-                }
-
-        log.info("  fetched %d tasks (offset=%d)", len(tasks), offset)
-        if len(tasks) < page_size:
+                    has_date = bool(e.get("value"))
+            if inv_num:
+                result[inv_num] = {"id": task["id"], "name": task.get("name", ""), "has_date": has_date}
+        log.info("  fetched %d (offset=%d)", len(tasks), offset)
+        if len(tasks) < 100:
             break
-        offset += page_size
-
-    log.info("Loaded %d Planfix invoices with invoice number", len(result))
+        offset += 100
+    log.info("Loaded %d Planfix invoices", len(result))
     return result
 
 
-# =============================================================================
-# MAIN
-# =============================================================================
-
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--live",      action="store_true", help="Write to Planfix")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite already filled fields")
+    parser.add_argument("--live",      action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     dry_run = not args.live
 
-    if dry_run:
-        log.info("=== DRY-RUN (use --live to write) ===")
-    else:
-        log.info("=== LIVE mode ===")
-
+    log.info("=== %s ===", "DRY-RUN" if dry_run else "LIVE")
     log.info("Period: %s – %s", DATE_FROM, DATE_TO)
 
-    # 1. Получить список счетов из n8n и отфильтровать по периоду
-    all_invoices = fetch_n8n_invoices()
-    n8n_invoices = filter_by_period(all_invoices)
+    # 1. n8n список → фильтр по периоду
+    log.info("Fetching n8n invoices...")
+    r = requests.get(N8N_WEBHOOK_URL, timeout=120)
+    r.raise_for_status()
+    all_items = r.json()
+    log.info("  Got %d from n8n", len(all_items))
 
-    # 2. Загрузить все Invoice задачи из Планфикс
+    items = [i for i in all_items
+             if (d := parse_ddmmyyyy(i.get("property_invoicedate") or ""))
+             and DATE_FROM <= d <= DATE_TO]
+    log.info("  After period filter: %d invoices", len(items))
+
+    # 2. Планфикс задачи
     pf_invoices = load_planfix_invoices()
 
     stats = defaultdict(int)
     rows = []
 
-    for item in n8n_invoices:
-        invoice_name = (item.get("property_invoice_name") or "").strip()
+    for item in items:
+        inv_name   = (item.get("property_invoice_name") or "").strip()
+        mp_id      = item.get("property_invoiseidmp")
 
-        row = {
-            "invoice_name":  invoice_name,
-            "pf_task_id":    "",
-            "status":        "",
-            "date":          "",
-            "amount":        "",
-            "error":         "",
-        }
+        row = {"invoice_name": inv_name, "mp_id": mp_id or "", "pf_task_id": "",
+               "status": "", "date": "", "error": ""}
 
-        if not invoice_name:
-            stats["no_name"] += 1
-            row["status"] = "no_name"
+        if not inv_name or not mp_id:
+            stats["skip"] += 1
+            row["status"] = "skip"
             rows.append(row)
             continue
 
-        # Данные из n8n
-        pay_date  = parse_date_ddmmyyyy(item.get("property_dedlinepay") or "")
-        sum_fact  = item.get("property_sum_fact")
-
-        log.info("Invoice '%s'  dedlinepay=%s  sum_fact=%s",
-                 invoice_name,
-                 pay_date.strftime("%Y-%m-%d") if pay_date else "—",
-                 sum_fact if sum_fact is not None else "—")
-
-        # 3. Найти задачу в Планфикс по номеру счёта
-        pf_task = pf_invoices.get(invoice_name)
+        # Найти задачу в Planfix
+        pf_task = pf_invoices.get(inv_name)
         if not pf_task:
-            log.warning("  → Planfix task not found for '%s'", invoice_name)
+            log.warning("  '%s': Planfix task not found", inv_name)
             stats["pf_not_found"] += 1
             row["status"] = "pf_not_found"
             rows.append(row)
@@ -259,68 +206,66 @@ def main() -> None:
 
         task_id = pf_task["id"]
         row["pf_task_id"] = task_id
-        errors = []
-        fields_to_write = []
 
-        # 4a. Дата оплаты
-        if pay_date and (not pf_task["has_date"] or args.overwrite):
-            fields_to_write.append({"field": {"id": PF_PAYMENT_DATE_FIELD}, "value": date_to_ts(pay_date)})
-            row["date"] = pay_date.strftime("%Y-%m-%d")
-        elif pf_task["has_date"] and not args.overwrite:
-            log.info("  task #%d: date already set, skipping", task_id)
+        # Пропустить если дата уже стоит
+        if pf_task["has_date"] and not args.overwrite:
+            log.info("  '%s' task #%d: date already set, skipping", inv_name, task_id)
+            stats["already_set"] += 1
+            row["status"] = "already_set"
+            rows.append(row)
+            continue
 
-        # 4b. Сумма оплаты
-        if sum_fact is not None and (not pf_task["has_amount"] or args.overwrite):
-            fields_to_write.append({"field": {"id": PF_PAYMENT_AMOUNT_FIELD}, "value": sum_fact})
-            row["amount"] = str(sum_fact)
-        elif pf_task["has_amount"] and not args.overwrite:
-            log.info("  task #%d: amount already set, skipping", task_id)
+        # Получить actualPaymentDate из Megaplan
+        log.info("  '%s' (mp=%s) → Megaplan...", inv_name, mp_id)
+        mp_data = mp_get(mp_id)
+        if not mp_data:
+            stats["mp_error"] += 1
+            row["status"] = "mp_error"
+            rows.append(row)
+            continue
 
-        # 5. Записать в Планфикс одним запросом
-        if fields_to_write:
-            if dry_run:
-                log.info("  [DRY-RUN] task #%d '%s' → date=%s  amount=%s",
-                         task_id, pf_task["name"][:40],
-                         row["date"] or "—", row["amount"] or "—")
-            else:
-                try:
-                    pf_req("POST", f"/task/{task_id}", json={"customFieldData": fields_to_write})
-                    log.info("  task #%d '%s' ✓  date=%s  amount=%s",
-                             task_id, pf_task["name"][:40],
-                             row["date"] or "—", row["amount"] or "—")
-                except Exception as e:
-                    log.error("  task #%d write error: %s", task_id, e)
-                    errors.append(str(e)[:150])
-                    row["date"] = ""
-                    row["amount"] = ""
+        ts = parse_actual_payment_date(mp_data)
+        if not ts:
+            log.info("  '%s': no actualPaymentDate in Megaplan", inv_name)
+            stats["no_date"] += 1
+            row["status"] = "no_date"
+            rows.append(row)
+            continue
 
-        if errors:
-            stats["error"] += 1
-            row["status"] = "error"
-            row["error"] = "; ".join(errors)
-        elif row["date"] or row["amount"]:
+        date_str = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).strftime("%Y-%m-%d")
+        row["date"] = date_str
+
+        if dry_run:
+            log.info("  [DRY-RUN] task #%d '%s' → payment date = %s", task_id, inv_name, date_str)
             stats["filled"] += 1
             row["status"] = "filled"
         else:
-            stats["already_set"] += 1
-            row["status"] = "already_set"
+            try:
+                pf_req("POST", f"/task/{task_id}", json={
+                    "customFieldData": [{"field": {"id": PF_PAYMENT_DATE_FIELD}, "value": ts}]
+                })
+                log.info("  task #%d '%s' ✓ date=%s", task_id, inv_name, date_str)
+                stats["filled"] += 1
+                row["status"] = "filled"
+            except Exception as e:
+                log.error("  task #%d error: %s", task_id, e)
+                stats["error"] += 1
+                row["status"] = "error"
+                row["error"] = str(e)[:150]
 
         rows.append(row)
 
-    # Итог
     log.info("")
     log.info("=== DONE ===")
-    log.info("filled=%d  already_set=%d  pf_not_found=%d  no_name=%d  errors=%d",
-             stats["filled"], stats["already_set"], stats["pf_not_found"],
-             stats["no_name"], stats["error"])
+    log.info("filled=%d  already_set=%d  no_date=%d  pf_not_found=%d  mp_error=%d  errors=%d",
+             stats["filled"], stats["already_set"], stats["no_date"],
+             stats["pf_not_found"], stats["mp_error"], stats["error"])
 
     with open(RESULT_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f,
-            fieldnames=["invoice_name", "pf_task_id", "status", "date", "amount", "error"])
+        writer = csv.DictWriter(f, fieldnames=["invoice_name", "mp_id", "pf_task_id", "status", "date", "error"])
         writer.writeheader()
         writer.writerows(rows)
     log.info("Results: %s", RESULT_CSV)
-
     if dry_run:
         log.info("Re-run with --live to apply")
 
