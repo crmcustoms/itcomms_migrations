@@ -222,7 +222,14 @@ def pf_get_field_file_ids(task_id: int, pf_field_id: int) -> list[int]:
         if field.get("field", {}).get("id") == pf_field_id:
             val = field.get("value")
             if isinstance(val, list):
-                return [v["id"] for v in val if v.get("id")]
+                # value може бути [int, ...] або [{"id": int}, ...]
+                result = []
+                for v in val:
+                    if isinstance(v, int):
+                        result.append(v)
+                    elif isinstance(v, dict) and v.get("id"):
+                        result.append(v["id"])
+                return result
     return []
 
 
@@ -230,10 +237,11 @@ def pf_update_field_files(task_id: int, pf_field_id: int, file_ids: list[int], d
     if dry_run:
         log.info(f"  DRY field {pf_field_id} ← {file_ids}")
         return
+    # Правильний формат для type 21 (Files): customFieldData + value = [int, int, ...]
     r = requests.post(
         f"{PLANFIX_HOST}/rest/task/{task_id}?silent=true",
         headers=PF_HEADERS,
-        json={"customFields": [{"field": {"id": pf_field_id}, "value": [{"id": i} for i in file_ids]}]},
+        json={"customFieldData": [{"field": {"id": pf_field_id}, "value": file_ids}]},
         timeout=30,
     )
     r.raise_for_status()
