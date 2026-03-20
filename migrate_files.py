@@ -185,7 +185,7 @@ def pf_get_tasks(template_id: int, offset: int = 0, page_size: int = 100) -> dic
             "offset": offset,
             "pageSize": page_size,
             "filters": [{"type": 325, "operator": "equal", "value": template_id}],
-            "fields": f"customField{DEAL_ID_FIELD}",
+            "fields": str(DEAL_ID_FIELD),
         },
         timeout=30,
     )
