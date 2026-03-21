@@ -195,7 +195,9 @@ def pf_get_tasks(template_id: int, offset: int = 0, page_size: int = 100) -> dic
 
 def pf_upload_file(content: bytes, filename: str, mimetype: str) -> int:
     """Загрузить файл в Planfix. Возвращает pf_file_id."""
-    files = {"file": (filename, content, mimetype)}
+    # Sanitize filename: залишаємо тільки ASCII-сумісні символи
+    safe_filename = filename.encode("ascii", errors="replace").decode("ascii").replace("?", "_")
+    files = {"file": (safe_filename, content, mimetype)}
     r = requests.post(
         f"{PLANFIX_HOST}/rest/file/",
         headers=PF_HDR_UPLOAD,
@@ -241,9 +243,12 @@ def pf_update_field_files(task_id: int, pf_field_id: int, file_ids: list[int], d
     r = requests.post(
         f"{PLANFIX_HOST}/rest/task/{task_id}?silent=true",
         headers=PF_HEADERS,
-        json={"customFieldData": [{"field": {"id": pf_field_id}, "value": file_ids}]},
+        json={"customFields": [{"field": {"id": pf_field_id}, "value": [{"id": fid} for fid in file_ids]}]},
         timeout=30,
     )
+    if r.status_code == 400:
+        log.warning(f"  ⚠ 400 task {task_id} field {pf_field_id} — поле не належить шаблону, пропуск")
+        return
     r.raise_for_status()
 
 
