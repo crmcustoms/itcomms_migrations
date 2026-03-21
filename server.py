@@ -58,6 +58,12 @@ SCRIPTS = {
     "fill_payment_date":      "fill_payment_date.py --live",
     "fill_invoice_payment":   "fill_invoice_payment.py --live",
     "run_migration":          "run_migration.py",
+    # File migration
+    "migrate_files_11_test":  "migrate_files.py --live --template 11 --limit 5",
+    "migrate_files_11":       "migrate_files.py --live --template 11",
+    "migrate_files_15":       "migrate_files.py --live --template 15",
+    "migrate_files_7691":     "migrate_files.py --live --template 7691",
+    "migrate_files_all":      "migrate_files.py --live",
 }
 
 # In-memory job store  { job_id: {"status", "script", "started_at", "output", "returncode"} }
