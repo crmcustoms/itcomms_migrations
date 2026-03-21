@@ -243,7 +243,7 @@ def pf_update_field_files(task_id: int, pf_field_id: int, file_ids: list[int], d
     r = requests.post(
         f"{PLANFIX_HOST}/rest/task/{task_id}?silent=true",
         headers=PF_HEADERS,
-        json={"customFields": [{"field": {"id": pf_field_id}, "value": [{"id": fid} for fid in file_ids]}]},
+        json={"customFieldData": [{"field": {"id": pf_field_id}, "value": file_ids}]},
         timeout=30,
     )
     if r.status_code == 400:
