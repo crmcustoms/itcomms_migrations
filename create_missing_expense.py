@@ -230,9 +230,10 @@ def pf_create_task(title: str, template_id: int, parent_id: int,
 
     # Крок 1: створити задачу з мінімальним payload (title + template + parent)
     payload = {
-        "title": title,
+        "name": title,
         "template": {"id": template_id},
-        "parentTask": {"id": parent_id},
+        "parent": {"id": parent_id},
+        "status": {"id": 101},
     }
     log.info(f"  payload step1: {_json.dumps(payload, ensure_ascii=False)}")
     r = requests.post(
