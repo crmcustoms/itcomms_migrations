@@ -227,13 +227,14 @@ def pf_create_task(title: str, template_id: int, parent_id: int,
         return 0
 
     import json as _json
+
+    # Крок 1: створити задачу з мінімальним payload (title + template + parent)
     payload = {
         "title": title,
         "template": {"id": template_id},
         "parent": {"id": parent_id},
-        "customFieldData": custom_fields,
     }
-    log.info(f"  payload: {_json.dumps(payload, ensure_ascii=False)[:500]}")
+    log.info(f"  payload step1: {_json.dumps(payload, ensure_ascii=False)}")
     r = requests.post(
         f"{PLANFIX_HOST}/rest/task/",
         headers=PF_HEADERS,
@@ -247,6 +248,22 @@ def pf_create_task(title: str, template_id: int, parent_id: int,
     task_id = data.get("id") or data.get("task", {}).get("id")
     if not task_id:
         raise ValueError(f"No task id in response: {data}")
+    log.info(f"  task created id={task_id}")
+
+    # Крок 2: заповнити кастомні поля
+    if custom_fields:
+        log.info(f"  updating fields: {_json.dumps(custom_fields, ensure_ascii=False)[:400]}")
+        r2 = requests.post(
+            f"{PLANFIX_HOST}/rest/task/{task_id}?silent=true",
+            headers=PF_HEADERS,
+            json={"customFieldData": custom_fields},
+            timeout=30,
+        )
+        if r2.status_code != 200:
+            log.warning(f"  fields update error {r2.status_code}: {r2.text[:200]}")
+        else:
+            log.info(f"  fields updated ok")
+
     return task_id
 
 
