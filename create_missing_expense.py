@@ -23,7 +23,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
@@ -339,19 +339,42 @@ def upload_mp_file(conn, mp_file: dict, dry_run: bool) -> int | None:
 
 # ─── Конвертація дати ─────────────────────────────────────────────────────────
 
-def convert_date(mp_date) -> str | None:
-    """Конвертувати дату Megaplan (YYYY-MM-DD або об'єкт) в DD-MM-YYYY для Planfix."""
+TIP_PLATEZHA_MAP = {
+    "Конфеты":       "Конфеты/Оплата на карту",
+    "Оплата на карту": "Конфеты/Оплата на карту",
+    "Безнал":        "Безнал",
+    "Крипта":        "Крипта",
+}
+
+
+def parse_dateonly(mp_date) -> int | None:
+    """Конвертує Megaplan DateOnly об'єкт або рядок в Unix timestamp (UTC).
+
+    Megaplan DateOnly: {"contentType":"DateOnly","year":2025,"month":11,"day":12}
+    ⚠️ Місяці 0-індексовані: month=0 → січень, month=11 → грудень
+    """
     if not mp_date:
         return None
     if isinstance(mp_date, dict):
+        if mp_date.get("contentType") == "DateOnly":
+            year  = mp_date.get("year")
+            month = mp_date.get("month")   # 0-indexed
+            day   = mp_date.get("day")
+            if year is None or month is None or day is None:
+                return None
+            try:
+                dt = datetime(year, month + 1, day, tzinfo=timezone.utc)
+                return int(dt.timestamp())
+            except Exception:
+                return None
+        # Якщо dict з "value" — рядок дати
         mp_date = mp_date.get("value", "")
     if not mp_date:
         return None
-    # Очищаємо від часу
     date_str = str(mp_date)[:10]
     try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        return dt.strftime("%d-%m-%Y")
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
     except Exception:
         return None
 
@@ -398,38 +421,110 @@ def process_deal(conn, mp_deal_id: int, pf_parent_id: int, dry_run: bool):
     title = deal_name or contractor_name or f"Розхід #{mp_deal_id}"
     log.info(f"  title={title!r} contractor_id={mp_contractor_id}")
 
-    # Поля
+    # ── Поля ──────────────────────────────────────────────────────────────────
     custom_fields = []
 
+    def add(field_id, value):
+        if value is not None and value != "" and value != 0:
+            custom_fields.append({"field": {"id": field_id}, "value": value})
+
     # 132121 — Megaplan deal ID
-    custom_fields.append({"field": {"id": 132121}, "value": str(mp_deal_id)})
+    add(132121, str(mp_deal_id))
 
     # 130207 — Megaplan contractor ID
     if mp_contractor_id:
-        custom_fields.append({"field": {"id": 130207}, "value": str(mp_contractor_id)})
+        add(130207, str(mp_contractor_id))
 
     # 130213 — Megaplan payer ID
     payer = deal.get("payer") or deal.get("responsible") or {}
     if isinstance(payer, dict) and payer.get("id"):
-        custom_fields.append({"field": {"id": 130213}, "value": str(payer["id"])})
+        add(130213, str(payer["id"]))
 
     # 130209 — ID рахунку (перший invoice якщо є)
     invoices = deal.get("invoices") or []
     if isinstance(invoices, list) and invoices:
         inv_id = invoices[0].get("id") if isinstance(invoices[0], dict) else invoices[0]
         if inv_id:
-            custom_fields.append({"field": {"id": 130209}, "value": str(inv_id)})
+            add(130209, str(inv_id))
 
-    # 138909 — Дата оплаты
-    payment_date = (
-        deal.get("actualPaymentDate") or
-        deal.get("Category1000083CustomFieldDataOplatiFakti") or
-        deal.get("paymentDate")
-    )
-    pf_date = convert_date(payment_date)
-    if pf_date:
-        custom_fields.append({"field": {"id": 138909}, "value": pf_date})
-        log.info(f"  payment_date={pf_date}")
+    # 121011 — ⭐ Дедлайн по оплаті (DateOnly, 0-indexed months)
+    deadline_ts = parse_dateonly(deal.get("Category1000083CustomFieldDedlaynPoOplate"))
+    if deadline_ts:
+        add(121011, deadline_ts)
+        log.info(f"  deadline={datetime.fromtimestamp(deadline_ts, tz=timezone.utc).strftime('%Y-%m-%d')}")
+
+    # 138909 — Дата оплати (DateOnly, 0-indexed months)
+    payment_ts = parse_dateonly(deal.get("Category1000083CustomFieldDataOplati"))
+    if payment_ts:
+        add(138909, payment_ts)
+        log.info(f"  payment_date={datetime.fromtimestamp(payment_ts, tz=timezone.utc).strftime('%Y-%m-%d')}")
+
+    # 120997 — Сумма + 138907 — Курс (з Money об'єкта CustomFieldSumma)
+    summa_obj = deal.get("Category1000083CustomFieldSumma") or {}
+    if isinstance(summa_obj, dict):
+        summa_val = summa_obj.get("value")
+        kurse_val = summa_obj.get("rate")
+        if summa_val:
+            add(120997, summa_val)
+            log.info(f"  summa={summa_val}")
+        if kurse_val:
+            add(138907, kurse_val)
+            log.info(f"  kurs={kurse_val}")
+
+    # 120987 — Валюта (enum: USD/EUR/RUB/UAH/KZT/UZS/CNY)
+    valuta = deal.get("Category1000083CustomFieldBuhgalteriyaValyuta") or ""
+    if valuta:
+        add(120987, valuta)
+
+    # 120981 — Тип платежа (enum) — mapped from TipPlatezha
+    tip_pf = TIP_PLATEZHA_MAP.get(tip_str)
+    if tip_pf:
+        add(120981, tip_pf)
+
+    # 120999 — Страна куда отправляем
+    strana = deal.get("Category1000083CustomFieldStranaKudaOtpravlyaemPlatezh") or ""
+    if strana:
+        add(120999, strana)
+
+    # 120983 — Бренд клиента
+    brend = deal.get("Category1000083CustomFieldBrend") or ""
+    if brend:
+        add(120983, brend)
+
+    # 120995 — Статья расходов (enum)
+    statya = deal.get("Category1000083CustomFieldStatyaRashodov") or ""
+    if statya and statya != "ВЫБЕРИ СТАТЬЮ":
+        add(120995, statya)
+
+    # 121059 — Статус документа (enum)
+    status_dok = deal.get("Category1000083CustomFieldStatusOplati1") or ""
+    if status_dok:
+        add(121059, status_dok)
+
+    # Template 15 only fields
+    if template_id == 15:
+        # 120985 — Наше Юр лицо (enum)
+        nashe_yur = deal.get("Category1000083CustomFieldBuhgalteriyaNasheYurLitso") or ""
+        if nashe_yur:
+            add(120985, nashe_yur)
+
+        # 121001 — Перевод на карту? (checkbox bool)
+        perevod = deal.get("Category1000083CustomFieldPerevodNaKartu")
+        if perevod is True:
+            add(121001, True)
+            # Карткові поля
+            fio = deal.get("Category1000083CustomFieldFamiliyaImyaPoluchatelyaNaLatinitseK") or ""
+            if fio:
+                add(121003, fio)
+            karta = deal.get("Category1000083CustomFieldNomerKarti") or ""
+            if karta:
+                add(121005, karta)
+            telefon = deal.get("Category1000083CustomFieldNomerTelefona") or ""
+            if telefon:
+                add(121007, telefon)
+            bank = deal.get("Category1000083CustomFieldNazvanieBanka") or ""
+            if bank:
+                add(121009, bank)
 
     # 136609 / 136611 — Постачальник (Planfix контакт)
     supplier_field_id = 136609 if template_id == 15 else 136611
@@ -437,7 +532,7 @@ def process_deal(conn, mp_deal_id: int, pf_parent_id: int, dry_run: bool):
         pf_contact_id = pf_find_contact_by_mp_id(mp_contractor_id)
         time.sleep(PLANFIX_DELAY)
         if pf_contact_id:
-            custom_fields.append({"field": {"id": supplier_field_id}, "value": pf_contact_id})
+            add(supplier_field_id, pf_contact_id)
             log.info(f"  supplier contact pf_id={pf_contact_id}")
         else:
             log.warning(f"  supplier contact not found for mp_id={mp_contractor_id}")
