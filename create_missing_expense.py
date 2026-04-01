@@ -244,7 +244,7 @@ def pf_create_task(title: str, template_id: int, parent_id: int,
         json=payload,
         timeout=30,
     )
-    if r.status_code != 200:
+    if r.status_code not in (200, 201):
         log.error(f"  CREATE task error {r.status_code}: {r.text[:300]}")
         r.raise_for_status()
     data = r.json()
