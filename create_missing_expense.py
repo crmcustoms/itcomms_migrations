@@ -236,7 +236,7 @@ def pf_create_task(title: str, template_id: int, parent_id: int,
     }
     log.info(f"  payload step1: {_json.dumps(payload, ensure_ascii=False)}")
     r = requests.post(
-        f"{PLANFIX_HOST}/rest/task",
+        f"{PLANFIX_HOST}/rest/task/add",
         headers=PF_HEADERS,
         json=payload,
         timeout=30,
