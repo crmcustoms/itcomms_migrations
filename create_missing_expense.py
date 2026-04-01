@@ -180,15 +180,21 @@ def pf_find_contact_by_mp_id(mp_contractor_id) -> int | None:
         f"{PLANFIX_HOST}/rest/contact/list",
         headers=PF_HEADERS,
         json={
+            "offset": 0,
+            "pageSize": 10,
+            "fields": "id,name,isCompany",
             "filters": [{
                 "type": 4101,
+                "field": "128997",
                 "operator": "equal",
                 "value": str(mp_contractor_id),
-                "field": {"id": 128997}
             }]
         },
         timeout=30,
     )
+    if r.status_code == 500:
+        log.warning(f"  contact search 500 for mp_id={mp_contractor_id}, skip")
+        return None
     r.raise_for_status()
     contacts = r.json().get("contacts", [])
     if contacts:
@@ -351,9 +357,16 @@ def process_deal(conn, mp_deal_id: int, pf_parent_id: int, dry_run: bool):
     # Визначити шаблон
     tip = deal.get("TipPlatezha", "")
     if isinstance(tip, dict):
-        tip = tip.get("value", "")
-    template_id = 15 if str(tip).strip() == "Конфеты" else 7691
-    log.info(f"  TipPlatezha={tip!r} -> template={template_id}")
+        tip = tip.get("value", "") or tip.get("name", "")
+    tip_str = str(tip).strip()
+    # Якщо поле пусте — шукаємо в назві угоди
+    if not tip_str:
+        deal_title_lower = (deal.get("name", "") or deal.get("contentName", "")).lower()
+        if "конфет" in deal_title_lower:
+            tip_str = "Конфеты"
+        log.info(f"  TipPlatezha empty, deal keys: {[k for k in deal.keys() if 'tip' in k.lower() or 'plat' in k.lower() or 'type' in k.lower()]}")
+    template_id = 15 if tip_str == "Конфеты" else 7691
+    log.info(f"  TipPlatezha={tip_str!r} -> template={template_id}")
 
     # Назва задачі
     contractor = deal.get("contractor") or {}
