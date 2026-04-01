@@ -226,12 +226,14 @@ def pf_create_task(title: str, template_id: int, parent_id: int,
         log.info(f"    fields: {custom_fields}")
         return 0
 
+    import json as _json
     payload = {
         "title": title,
         "template": {"id": template_id},
         "parent": {"id": parent_id},
         "customFieldData": custom_fields,
     }
+    log.info(f"  payload: {_json.dumps(payload, ensure_ascii=False)[:500]}")
     r = requests.post(
         f"{PLANFIX_HOST}/rest/task/",
         headers=PF_HEADERS,
@@ -355,16 +357,13 @@ def process_deal(conn, mp_deal_id: int, pf_parent_id: int, dry_run: bool):
         return None
 
     # Визначити шаблон
-    tip = deal.get("TipPlatezha", "")
+    tip = (
+        deal.get("Category1000083CustomFieldTipPlatezha") or
+        deal.get("TipPlatezha") or ""
+    )
     if isinstance(tip, dict):
         tip = tip.get("value", "") or tip.get("name", "")
     tip_str = str(tip).strip()
-    # Якщо поле пусте — шукаємо в назві угоди
-    if not tip_str:
-        deal_title_lower = (deal.get("name", "") or deal.get("contentName", "")).lower()
-        if "конфет" in deal_title_lower:
-            tip_str = "Конфеты"
-        log.info(f"  TipPlatezha empty, deal keys: {[k for k in deal.keys() if 'tip' in k.lower() or 'plat' in k.lower() or 'type' in k.lower()]}")
     template_id = 15 if tip_str == "Конфеты" else 7691
     log.info(f"  TipPlatezha={tip_str!r} -> template={template_id}")
 
@@ -420,7 +419,7 @@ def process_deal(conn, mp_deal_id: int, pf_parent_id: int, dry_run: bool):
         pf_contact_id = pf_find_contact_by_mp_id(mp_contractor_id)
         time.sleep(PLANFIX_DELAY)
         if pf_contact_id:
-            custom_fields.append({"field": {"id": supplier_field_id}, "value": [{"id": pf_contact_id}]})
+            custom_fields.append({"field": {"id": supplier_field_id}, "value": pf_contact_id})
             log.info(f"  supplier contact pf_id={pf_contact_id}")
         else:
             log.warning(f"  supplier contact not found for mp_id={mp_contractor_id}")
