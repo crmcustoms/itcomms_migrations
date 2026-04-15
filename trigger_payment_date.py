@@ -88,12 +88,25 @@ def pf_get_task_date(pf_task_id: int) -> int | None:
     if not r.ok:
         log.warning(f"  GET task {pf_task_id}: {r.status_code}")
         return None
-    cfd = r.json().get("customFieldData") or []
+    data = r.json().get("task") or r.json()
+    cfd = data.get("customFieldData") or []
     for entry in cfd:
         if (entry.get("field") or {}).get("id") == PAYMENT_DATE_FIELD:
             val = entry.get("value")
-            if val:
+            if not val:
+                continue
+            # val може бути int або dict {"datetime":"..."}
+            if isinstance(val, (int, float)):
                 return int(val)
+            if isinstance(val, dict):
+                dt_str = val.get("datetime", "").replace("Z", "+00:00")
+                if dt_str:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M%z")
+                        return int(dt.timestamp())
+                    except Exception:
+                        pass
     return None
 
 

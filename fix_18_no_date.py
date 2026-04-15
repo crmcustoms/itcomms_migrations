@@ -46,6 +46,34 @@ def get_field_value(cfd: list, field_id: int):
     return None
 
 
+def date_val_to_ts(val) -> int | None:
+    """Конвертує Planfix date value → Unix timestamp.
+    val може бути int (timestamp) або dict {"datetime":"2025-12-12T00:00Z",...}
+    """
+    if not val:
+        return None
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, dict):
+        dt_str = val.get("datetime") or val.get("date")
+        if dt_str:
+            try:
+                from datetime import datetime, timezone
+                dt_str = dt_str.replace("Z", "+00:00")
+                # "2025-12-12T00:00+00:00" або "12-12-2025"
+                for fmt in ("%Y-%m-%dT%H:%M%z", "%d-%m-%Y"):
+                    try:
+                        dt = datetime.strptime(dt_str, fmt)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        return int(dt.timestamp())
+                    except ValueError:
+                        continue
+            except Exception:
+                pass
+    return None
+
+
 def run(dry_run: bool):
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
@@ -71,11 +99,11 @@ def run(dry_run: bool):
             errors += 1
             continue
 
-        data  = r.json()
+        data  = r.json().get("task") or r.json()
         cfd   = data.get("customFieldData") or []
         name  = data.get("name", "")[:50]
-        pay   = get_field_value(cfd, PAYMENT_DATE_FIELD)
-        dead  = get_field_value(cfd, DEADLINE_FIELD)
+        pay   = date_val_to_ts(get_field_value(cfd, PAYMENT_DATE_FIELD))
+        dead  = date_val_to_ts(get_field_value(cfd, DEADLINE_FIELD))
 
         # Є дата оплати — пропускаємо
         if pay:
